@@ -22,7 +22,7 @@ else
     read -p "Choose an option (1-3): " CHOICE
     case "$CHOICE" in
         1) ACTION="Install" ;;
-        2) Amin) ACTION="Delete" ;;
+        2) ACTION="Delete" ;;
         3) ACTION="Abort" ;;
     esac
 fi
