@@ -80,6 +80,10 @@ case "$ACTION" in
                 echo "100" ; echo "# Installation Complete!"
             ) | zenity --progress --title="Archivist Installer v${VERSION}" --text="Preparing installation..." --percentage=0 --auto-close --width=400
             
+            # Force refresh menu after install too
+            if command -v kbuildsycoca5 &> /dev/null; then kbuildsycoca5 --noincremental &> /dev/null; fi
+            if command -v kbuildsycoca6 &> /dev/null; then kbuildsycoca6 --noincremental &> /dev/null; fi
+            
             zenity --info --title="Success" --text="Archivist v${VERSION} has been successfully installed!" --width=350
         else
             echo "Downloading assets from GitHub..."
@@ -101,6 +105,10 @@ case "$ACTION" in
             rm -rf "$HOME/home" "$HOME/Archivist_assets"
             rm -f /tmp/Archivist_assets.zip
             rm -rf "$TMP_DIR"
+            
+            if command -v kbuildsycoca5 &> /dev/null; then kbuildsycoca5 --noincremental &> /dev/null; fi
+            if command -v kbuildsycoca6 &> /dev/null; then kbuildsycoca6 --noincremental &> /dev/null; fi
+            
             echo "Success! Archivist v${VERSION} has been installed."
         fi
         ;;
@@ -126,6 +134,16 @@ case "$ACTION" in
             rm -f "$HOME/.local/share/icons/hicolor/256x256/apps/archivist.png"
             rm -f "$HOME/Desktop/Archivist.desktop"
             
+            echo "--> Refreshing system application menus..."
+            # For older SteamOS / KDE 5
+            if command -v kbuildsycoca5 &> /dev/null; then
+                kbuildsycoca5 --noincremental &> /dev/null
+            fi
+            # For newer SteamOS / KDE 6
+            if command -v kbuildsycoca6 &> /dev/null; then
+                kbuildsycoca6 --noincremental &> /dev/null
+            fi
+            
             if command -v zenity &> /dev/null; then
                 zenity --info --title="Deleted" --text="Archivist has been completely removed." --width=350
             else
@@ -137,6 +155,8 @@ case "$ACTION" in
     *)
         echo "Exiting setup."
         exit 0
+        ;;
+case_tag_error) # Safely closing out nested blocks
         ;;
 esac
 exit 0
