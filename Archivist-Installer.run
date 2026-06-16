@@ -23,7 +23,7 @@ else
     case "$CHOICE" in
         1) ACTION="Install" ;;
         2) Amin) ACTION="Delete" ;;
-        *) ACTION="Abort" ;;
+        3) ACTION="Abort" ;;
     esac
 fi
 
