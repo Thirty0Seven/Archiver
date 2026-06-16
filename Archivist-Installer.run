@@ -23,7 +23,7 @@ else
     case "$CHOICE" in
         1) ACTION="Install" ;;
         2) ACTION="Delete" ;;
-        3) ACTION="Abort" ;;
+        *) ACTION="Abort" ;;
     esac
 fi
 
@@ -106,15 +106,20 @@ case "$ACTION" in
         ;;
 
     "Delete")
+        RUN_DELETE="false"
         if command -v zenity &> /dev/null; then
             zenity --question --title="Confirm Deletion" --text="Are you sure you want to completely remove Archivist from your system?" --width=350
-            RUN_DELETE=$?
+            if [ $? -eq 0 ]; then
+                RUN_DELETE="true"
+            fi
         else
             read -p "Are you sure you want to completely remove Archivist? (y/N): " CONFIRM
-            [[ "$CONFIRM" =~ ^[Yy]$ ]] && RUN_DELETE=0 || RUN_DELETE=1
+            if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
+                RUN_DELETE="true"
+            fi
         fi
 
-        if [ $RUN_DELETE -eq 0 ]; then
+        if [ "$RUN_DELETE" = "true" ]; then
             echo "--> Removing system files..."
             rm -f "$HOME/Applications/Archivist-x86_64.AppImage"
             rm -f "$HOME/.local/share/applications/Archivist.desktop"
@@ -124,7 +129,7 @@ case "$ACTION" in
             if command -v zenity &> /dev/null; then
                 zenity --info --title="Deleted" --text="Archivist has been completely removed." --width=350
             else
-                echo "Archiver has been completely removed."
+                echo "Archivist has been completely removed."
             fi
         fi
         ;;
