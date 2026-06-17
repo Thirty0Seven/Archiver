@@ -11,7 +11,7 @@ refresh_desktop_menus() {
     if command -v update-desktop-database &> /dev/null; then update-desktop-database "$HOME/.local/share/applications" &> /dev/null; fi
 }
 
-# Function to safely locate and deploy files regardless of ZIP nesting
+# Function to safely locate, patch, and deploy files regardless of ZIP nesting
 deploy_assets() {
     local src="$1"
     
@@ -32,14 +32,25 @@ deploy_assets() {
         chmod +x "$HOME/Applications/Archivist-x86_64.AppImage"
     fi
 
-    if [ -n "$desktop_path" ]; then
-        cp "$desktop_path" "$HOME/.local/share/applications/Archivist.desktop"
-        cp "$desktop_path" "$HOME/Desktop/Archivist.desktop"
-        chmod +x "$HOME/Desktop/Archivist.desktop" 2>/dev/null || true
-    fi
-
     if [ -n "$icon_path" ]; then
         cp "$icon_path" "$HOME/.local/share/icons/hicolor/256x256/apps/archivist.png"
+    fi
+
+    if [ -n "$desktop_path" ]; then
+        # Copy to a temporary location first to patch the paths safely
+        cp "$desktop_path" "/tmp/Archivist_patched.desktop"
+        
+        # Dynamically replace /home/deck with the actual active $HOME path
+        # Using '|' as a delimiter in sed because paths contain slashes '/'
+        sed -i "s|/home/deck|$HOME|g" "/tmp/Archivist_patched.desktop"
+        
+        # Deploy the patched desktop entry to the menu and desktop locations
+        cp "/tmp/Archivist_patched.desktop" "$HOME/.local/share/applications/Archivist.desktop"
+        cp "/tmp/Archivist_patched.desktop" "$HOME/Desktop/Archivist.desktop"
+        chmod +x "$HOME/Desktop/Archivist.desktop" 2>/dev/null || true
+        
+        # Clean up temporary file
+        rm -f "/tmp/Archivist_patched.desktop"
     fi
 }
 
