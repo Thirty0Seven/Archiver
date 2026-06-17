@@ -23,9 +23,9 @@ deploy_assets() {
     mkdir -p "$HOME/Desktop"
 
     # Dynamically locate the assets inside the extracted workspace
-    local appimage_path=$(find "$src" -name "Archivist-x86_64.AppImage" -print -quit)
-    local desktop_path=$(find "$src" -name "Archivist.desktop" -print -quit)
-    local icon_path=$(find "$src" -name "archivist.png" -print -quit)
+    local appimage_path=$(find "$src" -iname "Archivist-x86_64.AppImage" -print -quit)
+    local desktop_path=$(find "$src" -iname "Archivist.desktop" -print -quit)
+    local icon_path=$(find "$src" -iname "archivist.png" -print -quit)
 
     # Safely copy files only if they were found in the archive
     if [ -n "$appimage_path" ]; then
