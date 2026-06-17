@@ -11,6 +11,38 @@ refresh_desktop_menus() {
     if command -v update-desktop-database &> /dev/null; then update-desktop-database "$HOME/.local/share/applications" &> /dev/null; fi
 }
 
+# Function to safely locate and deploy files regardless of ZIP nesting
+deploy_assets() {
+    local src="$1"
+    
+    # Proactively create the target directories if the distro doesn't have them
+    mkdir -p "$HOME/Applications"
+    mkdir -p "$HOME/.local/share/applications"
+    mkdir -p "$HOME/.local/share/icons/hicolor/256x256/apps"
+    mkdir -p "$HOME/Desktop"
+
+    # Dynamically locate the assets inside the extracted workspace
+    local appimage_path=$(find "$src" -name "Archivist-x86_64.AppImage" -print -quit)
+    local desktop_path=$(find "$src" -name "Archivist.desktop" -print -quit)
+    local icon_path=$(find "$src" -name "archivist.png" -print -quit)
+
+    # Safely copy files only if they were found in the archive
+    if [ -n "$appimage_path" ]; then
+        cp "$appimage_path" "$HOME/Applications/Archivist-x86_64.AppImage"
+        chmod +x "$HOME/Applications/Archivist-x86_64.AppImage"
+    fi
+
+    if [ -n "$desktop_path" ]; then
+        cp "$desktop_path" "$HOME/.local/share/applications/Archivist.desktop"
+        cp "$desktop_path" "$HOME/Desktop/Archivist.desktop"
+        chmod +x "$HOME/Desktop/Archivist.desktop" 2>/dev/null || true
+    fi
+
+    if [ -n "$icon_path" ]; then
+        cp "$icon_path" "$HOME/.local/share/icons/hicolor/256x256/apps/archivist.png"
+    fi
+}
+
 # Graphical Action Picker
 if command -v zenity &> /dev/null; then
     ACTION=$(zenity --list --radiolist --title="Archivist Setup v${VERSION}" \
@@ -80,20 +112,9 @@ case "$ACTION" in
                 unzip -o /tmp/Archivist_assets.zip -d "$TMP_DIR" > /dev/null
 
                 echo "70" ; echo "# Merging folders into system root..."
-                if [ -d "$TMP_DIR/home" ]; then
-                    cp -r "$TMP_DIR/home/." "$HOME/"
-                elif [ -d "$TMP_DIR/Archivist_assets" ]; then
-                    if [ -d "$TMP_DIR/Archivist_assets/home" ]; then
-                        cp -r "$TMP_DIR/Archivist_assets/home/." "$HOME/"
-                    else
-                        cp -r "$TMP_DIR/Archivist_assets/." "$HOME/"
-                    fi
-                else
-                    cp -r "$TMP_DIR/." "$HOME/"
-                fi
+                deploy_assets "$TMP_DIR"
 
                 echo "90" ; echo "# Finalizing configurations..."
-                rm -rf "$HOME/home" "$HOME/Archivist_assets"
                 rm -f /tmp/Archivist_assets.zip
                 rm -rf "$TMP_DIR"
 
@@ -107,19 +128,9 @@ case "$ACTION" in
             if curl -f -L "$GITHUB_URL" -o /tmp/Archivist_assets.zip; then
                 echo "Extracting safely..."
                 unzip -o /tmp/Archivist_assets.zip -d "$TMP_DIR" > /dev/null
-                echo "Merging files to $HOME..."
-                if [ -d "$TMP_DIR/home" ]; then
-                    cp -r "$TMP_DIR/home/." "$HOME/"
-                elif [ -d "$TMP_DIR/Archivist_assets" ] ; then
-                    if [ -d "$TMP_DIR/Archivist_assets/home" ]; then
-                        cp -r "$TMP_DIR/Archivist_assets/home/." "$HOME/"
-                    else
-                        cp -r "$TMP_DIR/Archivist_assets/." "$HOME/"
-                    fi
-                else
-                    cp -r "$TMP_DIR/." "$HOME/"
-                fi
-                rm -rf "$HOME/home" "$HOME/Archivist_assets"
+                echo "Merging files to \$HOME..."
+                deploy_assets "$TMP_DIR"
+                
                 rm -f /tmp/Archivist_assets.zip
                 rm -rf "$TMP_DIR"
 
