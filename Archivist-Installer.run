@@ -12,6 +12,17 @@ refresh_desktop_menus() {
     if command -v update-desktop-database &> /dev/null; then update-desktop-database "$HOME/.local/share/applications" &> /dev/null; fi
 }
 
+# Function to check whether FUSE is available, since AppImages require it to
+# mount and run. Many modern distros (Ubuntu 22.04+, Fedora, etc.) no longer
+# ship libfuse2 by default, which causes AppImages to fail to launch silently.
+check_fuse_support() {
+    if [ -e /dev/fuse ] || command -v fusermount &> /dev/null || command -v fusermount3 &> /dev/null; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 # Function to safely locate, patch, and deploy files regardless of ZIP nesting
 deploy_assets() {
     local src="$1"
@@ -44,6 +55,18 @@ deploy_assets() {
         # Dynamically replace /home/deck with the actual active $HOME path
         # Using '|' as a delimiter in sed because paths contain slashes '/'
         sed -i "s|/home/deck|$HOME|g" "/tmp/Archivist_patched.desktop"
+
+        # Rewrite Exec= and Icon= outright to point at the exact paths this
+        # script just deployed. This avoids any mismatch with whatever
+        # filename casing or path the original .desktop file shipped with --
+        # we know exactly where the AppImage and icon ended up, so just
+        # point directly at them instead of relying on substitution.
+        if [ -n "$appimage_path" ]; then
+            sed -i "s|^Exec=.*|Exec=\"$HOME/Applications/Archivist-x86_64.AppImage\" %U|" "/tmp/Archivist_patched.desktop"
+        fi
+        if [ -n "$icon_path" ]; then
+            sed -i "s|^Icon=.*|Icon=$HOME/.local/share/icons/hicolor/256x256/apps/archivist.png|" "/tmp/Archivist_patched.desktop"
+        fi
 
         # Deploy the patched desktop entry to the menu and desktop locations
         cp "/tmp/Archivist_patched.desktop" "$HOME/.local/share/applications/Archivist.desktop"
@@ -161,7 +184,11 @@ case "$ACTION" in
             refresh_desktop_menus
 
             if [ "$INSTALL_STATUS" -eq 0 ]; then
-                zenity --info --title="Success" --text="Archivist v${VERSION} has been successfully installed!" --width=350
+                if check_fuse_support; then
+                    zenity --info --title="Success" --text="Archivist v${VERSION} has been successfully installed!" --width=350
+                else
+                    zenity --warning --title="Installed -- Missing Dependency" --text="Archivist v${VERSION} was installed, but FUSE was not detected on this system. AppImages require FUSE to launch.\n\nInstall it via your package manager, e.g.:\nsudo apt install libfuse2t64\n(or libfuse2 on older distros)" --width=400
+                fi
             else
                 zenity --error --title="Installation Failed" --text="Archivist installation did not complete successfully. Please check your connection and try again." --width=350
             fi
@@ -192,6 +219,10 @@ case "$ACTION" in
 
                 refresh_desktop_menus
                 echo "Success! Archivist v${VERSION} has been installed."
+                if ! check_fuse_support; then
+                    echo "Warning: FUSE was not detected on this system. AppImages require FUSE to launch."
+                    echo "Install it via your package manager, e.g.: sudo apt install libfuse2t64 (or libfuse2 on older distros)"
+                fi
             else
                 echo "Error: Failed to download assets from GitHub."
                 exit 1
