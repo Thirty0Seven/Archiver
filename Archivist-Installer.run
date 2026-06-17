@@ -63,6 +63,7 @@ deploy_assets() {
         # point directly at them instead of relying on substitution.
         if [ -n "$appimage_path" ]; then
             sed -i "s|^Exec=.*|Exec=\"$HOME/Applications/Archivist-x86_64.AppImage\" %U|" "/tmp/Archivist_patched.desktop"
+            sed -i "s|^TryExec=.*|TryExec=$HOME/Applications/Archivist-x86_64.AppImage|" "/tmp/Archivist_patched.desktop"
         fi
         if [ -n "$icon_path" ]; then
             sed -i "s|^Icon=.*|Icon=$HOME/.local/share/icons/hicolor/256x256/apps/archivist.png|" "/tmp/Archivist_patched.desktop"
