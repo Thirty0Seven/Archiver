@@ -1,20 +1,30 @@
 #!/bin/bash
 
-# Configuration Variables
+# ---------------------------------------------------------------------------
+# Common Version – both releases use the same tag
+# ---------------------------------------------------------------------------
 VERSION="1.2.0"
-GITHUB_URL="https://github.com/Thirty0Seven/Archivist/releases/download/v${VERSION}/Archivist_assets.zip"
-SHA_URL="https://github.com/Thirty0Seven/Archivist/releases/download/v${VERSION}/Archivist_assets.zip.sha256"
 
-# Function to refresh all possible desktop entry databases
+# Archivist assets
+ARCHIVIST_URL="https://github.com/Thirty0Seven/Archivist/releases/download/v${VERSION}/Archivist_assets.zip"
+ARCHIVIST_SHA_URL="https://github.com/Thirty0Seven/Archivist/releases/download/v${VERSION}/Archivist_assets.zip.sha256"
+
+# Archivist-Matrix assets (same version, different zip)
+MATRIX_URL="https://github.com/Thirty0Seven/Archivist/releases/download/v${VERSION}/Archivist-Matrix_assets.zip"
+MATRIX_SHA_URL="https://github.com/Thirty0Seven/Archivist/releases/download/v${VERSION}/Archivist-Matrix_assets.zip.sha256"
+
+# ---------------------------------------------------------------------------
+# Helper Functions
+# ---------------------------------------------------------------------------
+
+# Refresh all possible desktop entry databases
 refresh_desktop_menus() {
     if command -v kbuildsycoca5 &> /dev/null; then kbuildsycoca5 --noincremental &> /dev/null; fi
     if command -v kbuildsycoca6 &> /dev/null; then kbuildsycoca6 --noincremental &> /dev/null; fi
     if command -v update-desktop-database &> /dev/null; then update-desktop-database "$HOME/.local/share/applications" &> /dev/null; fi
 }
 
-# Function to check whether FUSE is available, since AppImages require it to
-# mount and run. Many modern distros (Ubuntu 22.04+, Fedora, etc.) no longer
-# ship libfuse2 by default, which causes AppImages to fail to launch silently.
+# Check whether FUSE is available (AppImages need it)
 check_fuse_support() {
     if [ -e /dev/fuse ] || command -v fusermount &> /dev/null || command -v fusermount3 &> /dev/null; then
         return 0
@@ -23,87 +33,266 @@ check_fuse_support() {
     fi
 }
 
-# Function to safely locate, patch, and deploy files regardless of ZIP nesting
+# Safely locate, patch, and deploy files for a given application name
+# Usage: deploy_assets <source_dir> <app_name>
+#   app_name: "Archivist" or "Archivist-Matrix"
 deploy_assets() {
     local src="$1"
+    local app_name="$2"
 
-    # Proactively create the target directories if the distro doesn't have them
+    # Create target directories if they don't exist
     mkdir -p "$HOME/Applications"
     mkdir -p "$HOME/.local/share/applications"
     mkdir -p "$HOME/.local/share/icons/hicolor/256x256/apps"
     mkdir -p "$HOME/Desktop"
 
     # Dynamically locate the assets inside the extracted workspace
-    local appimage_path=$(find "$src" -iname "Archivist-x86_64.AppImage" -print -quit)
-    local desktop_path=$(find "$src" -iname "Archivist.desktop" -print -quit)
-    local icon_path=$(find "$src" -iname "archivist.png" -print -quit)
+    local appimage_path=$(find "$src" -iname "${app_name}-x86_64.AppImage" -print -quit)
+    local desktop_path=$(find "$src" -iname "${app_name}.desktop" -print -quit)
+    # Icon may be named e.g. "archivist.png" or "archivist-matrix.png" – try both patterns
+    local icon_path=$(find "$src" -iname "${app_name}.png" -print -quit)
+    if [ -z "$icon_path" ]; then
+        # fallback to lowercase variant
+        local lower_name=$(echo "$app_name" | tr '[:upper:]' '[:lower:]')
+        icon_path=$(find "$src" -iname "${lower_name}.png" -print -quit)
+    fi
 
-    # Safely copy files only if they were found in the archive
+    # Copy AppImage
     if [ -n "$appimage_path" ]; then
-        cp "$appimage_path" "$HOME/Applications/Archivist-x86_64.AppImage"
-        chmod +x "$HOME/Applications/Archivist-x86_64.AppImage"
+        cp "$appimage_path" "$HOME/Applications/${app_name}-x86_64.AppImage"
+        chmod +x "$HOME/Applications/${app_name}-x86_64.AppImage"
     fi
 
+    # Copy icon
     if [ -n "$icon_path" ]; then
-        cp "$icon_path" "$HOME/.local/share/icons/hicolor/256x256/apps/archivist.png"
+        cp "$icon_path" "$HOME/.local/share/icons/hicolor/256x256/apps/${app_name}.png"
     fi
 
+    # Copy, patch, and deploy .desktop file
     if [ -n "$desktop_path" ]; then
-        # Copy to a temporary location first to patch the paths safely
-        cp "$desktop_path" "/tmp/Archivist_patched.desktop"
+        cp "$desktop_path" "/tmp/${app_name}_patched.desktop"
 
-        # Dynamically replace /home/deck with the actual active $HOME path
-        # Using '|' as a delimiter in sed because paths contain slashes '/'
-        sed -i "s|/home/deck|$HOME|g" "/tmp/Archivist_patched.desktop"
+        # Replace any hardcoded /home/deck with actual $HOME
+        sed -i "s|/home/deck|$HOME|g" "/tmp/${app_name}_patched.desktop"
 
-        # Rewrite Exec= and Icon= outright to point at the exact paths this
-        # script just deployed. This avoids any mismatch with whatever
-        # filename casing or path the original .desktop file shipped with --
-        # we know exactly where the AppImage and icon ended up, so just
-        # point directly at them instead of relying on substitution.
+        # Overwrite Exec and TryExec to point to the deployed AppImage
         if [ -n "$appimage_path" ]; then
-            sed -i "s|^Exec=.*|Exec=\"$HOME/Applications/Archivist-x86_64.AppImage\" %U|" "/tmp/Archivist_patched.desktop"
-            sed -i "s|^TryExec=.*|TryExec=$HOME/Applications/Archivist-x86_64.AppImage|" "/tmp/Archivist_patched.desktop"
+            sed -i "s|^Exec=.*|Exec=\"$HOME/Applications/${app_name}-x86_64.AppImage\" %U|" "/tmp/${app_name}_patched.desktop"
+            sed -i "s|^TryExec=.*|TryExec=$HOME/Applications/${app_name}-x86_64.AppImage|" "/tmp/${app_name}_patched.desktop"
         fi
+
+        # Overwrite Icon to point to the deployed icon
         if [ -n "$icon_path" ]; then
-            sed -i "s|^Icon=.*|Icon=$HOME/.local/share/icons/hicolor/256x256/apps/archivist.png|" "/tmp/Archivist_patched.desktop"
+            sed -i "s|^Icon=.*|Icon=$HOME/.local/share/icons/hicolor/256x256/apps/${app_name}.png|" "/tmp/${app_name}_patched.desktop"
         fi
 
-        # Deploy the patched desktop entry to the menu and desktop locations
-        cp "/tmp/Archivist_patched.desktop" "$HOME/.local/share/applications/Archivist.desktop"
-        cp "/tmp/Archivist_patched.desktop" "$HOME/Desktop/Archivist.desktop"
-        chmod +x "$HOME/Desktop/Archivist.desktop" 2>/dev/null || true
+        # Deploy the patched desktop entry
+        cp "/tmp/${app_name}_patched.desktop" "$HOME/.local/share/applications/${app_name}.desktop"
+        cp "/tmp/${app_name}_patched.desktop" "$HOME/Desktop/${app_name}.desktop"
+        chmod +x "$HOME/Desktop/${app_name}.desktop" 2>/dev/null || true
 
-        # Mark the desktop shortcut as trusted on GNOME/Nautilus so it
-        # launches directly instead of showing an "untrusted" warning
+        # Mark as trusted on GNOME
         if command -v gio &> /dev/null; then
-            gio set "$HOME/Desktop/Archivist.desktop" metadata::trusted true 2>/dev/null || true
+            gio set "$HOME/Desktop/${app_name}.desktop" metadata::trusted true 2>/dev/null || true
         fi
 
-        # Clean up temporary file
-        rm -f "/tmp/Archivist_patched.desktop"
+        rm -f "/tmp/${app_name}_patched.desktop"
     fi
 }
 
+# Install a given application
+# Usage: install_app <app_name> <version> <download_url> <sha_url>
+install_app() {
+    local app_name="$1"
+    local version="$2"
+    local url="$3"
+    local sha_url="$4"
+
+    # Pre-flight: unzip required
+    if ! command -v unzip &> /dev/null; then
+        if command -v zenity &> /dev/null; then
+            zenity --error --title="Missing Dependency" --text="Required tool 'unzip' is not installed. Please install it via your package manager." --width=350
+        else
+            echo "Error: 'unzip' is required but not installed. Please install it and try again."
+        fi
+        return 1
+    fi
+
+    echo "--> Creating clean workspace for ${app_name}..."
+    TMP_DIR="/tmp/${app_name}_extract"
+    rm -rf "$TMP_DIR"
+    mkdir -p "$TMP_DIR"
+
+    # Ensure cleanup on exit
+    trap 'rm -f /tmp/${app_name}_assets.zip /tmp/${app_name}_assets.zip.sha256 /tmp/${app_name}_install_error; rm -rf "$TMP_DIR"' EXIT
+
+    if command -v zenity &> /dev/null; then
+        rm -f "/tmp/${app_name}_install_error"
+        (
+            echo "10" ; echo "# Connecting to GitHub Servers for ${app_name} v${version}..."
+            if ! curl -f -L "$url" -o "/tmp/${app_name}_assets.zip"; then
+                echo "100" ; echo "# Error downloading assets from GitHub."
+                echo "Could not download ${app_name}_assets.zip from GitHub. Check your internet connection and try again." > "/tmp/${app_name}_install_error"
+                exit 1
+            fi
+
+            echo "25" ; echo "# Fetching checksum for verification..."
+            if ! curl -f -sL "$sha_url" -o "/tmp/${app_name}_assets.zip.sha256"; then
+                echo "100" ; echo "# Error downloading checksum file."
+                echo "Could not download the checksum file (${app_name}_assets.zip.sha256) from GitHub. Check your internet connection and try again." > "/tmp/${app_name}_install_error"
+                exit 1
+            fi
+
+            echo "35" ; echo "# Verifying download integrity..."
+            EXPECTED_HASH=$(awk '{print $1}' "/tmp/${app_name}_assets.zip.sha256")
+            ACTUAL_HASH=$(sha256sum "/tmp/${app_name}_assets.zip" | awk '{print $1}')
+            if [ "$EXPECTED_HASH" != "$ACTUAL_HASH" ]; then
+                echo "100" ; echo "# Checksum mismatch -- download may be corrupted or tampered with."
+                echo "Checksum verification failed: the downloaded file does not match the expected hash.\n\nExpected: $EXPECTED_HASH\nActual:   $ACTUAL_HASH\n\nThe download may be corrupted or tampered with. Please try running the installer again." > "/tmp/${app_name}_install_error"
+                exit 1
+            fi
+
+            echo "50" ; echo "# Extracting file structure safely..."
+            if ! unzip -o "/tmp/${app_name}_assets.zip" -d "$TMP_DIR" > /dev/null; then
+                echo "100" ; echo "# Error extracting archive."
+                echo "Failed to extract ${app_name}_assets.zip. The archive may be corrupted." > "/tmp/${app_name}_install_error"
+                exit 1
+            fi
+
+            echo "75" ; echo "# Merging folders into system root..."
+            deploy_assets "$TMP_DIR" "$app_name"
+
+            echo "90" ; echo "# Finalizing configurations..."
+            rm -f "/tmp/${app_name}_assets.zip" "/tmp/${app_name}_assets.zip.sha256"
+            rm -rf "$TMP_DIR"
+
+            echo "100" ; echo "# Installation Complete!"
+        ) | zenity --progress --title="${app_name} Installer v${version}" --text="Preparing installation..." --percentage=0 --auto-close --width=400
+
+        INSTALL_STATUS=${PIPESTATUS[0]}
+        refresh_desktop_menus
+
+        if [ "$INSTALL_STATUS" -eq 0 ]; then
+            if check_fuse_support; then
+                zenity --info --title="Success" --text="${app_name} v${version} has been successfully installed!" --width=350
+            else
+                zenity --warning --title="Installed -- Missing Dependency" --text="${app_name} v${version} was installed, but FUSE was not detected on this system. AppImages require FUSE to launch.\n\nInstall it via your package manager, e.g.:\nsudo apt install libfuse2t64\n(or libfuse2 on older distros)" --width=400
+            fi
+        else
+            if [ -f "/tmp/${app_name}_install_error" ]; then
+                ERROR_DETAIL=$(cat "/tmp/${app_name}_install_error")
+            else
+                ERROR_DETAIL="${app_name} installation did not complete successfully."
+            fi
+            zenity --error --title="Installation Failed" --text="$ERROR_DETAIL" --width=400
+            rm -f "/tmp/${app_name}_install_error"
+        fi
+    else
+        # Terminal version
+        echo "Downloading ${app_name} assets from GitHub..."
+        if curl -f -L "$url" -o "/tmp/${app_name}_assets.zip"; then
+            echo "Fetching checksum for verification..."
+            if ! curl -f -sL "$sha_url" -o "/tmp/${app_name}_assets.zip.sha256"; then
+                echo "Error: Failed to download checksum file from GitHub."
+                return 1
+            fi
+
+            echo "Verifying download integrity..."
+            EXPECTED_HASH=$(awk '{print $1}' "/tmp/${app_name}_assets.zip.sha256")
+            ACTUAL_HASH=$(sha256sum "/tmp/${app_name}_assets.zip" | awk '{print $1}')
+            if [ "$EXPECTED_HASH" != "$ACTUAL_HASH" ]; then
+                echo "Error: Checksum mismatch -- download may be corrupted or tampered with."
+                return 1
+            fi
+
+            echo "Extracting safely..."
+            unzip -o "/tmp/${app_name}_assets.zip" -d "$TMP_DIR" > /dev/null
+            echo "Merging files to \$HOME..."
+            deploy_assets "$TMP_DIR" "$app_name"
+
+            rm -f "/tmp/${app_name}_assets.zip" "/tmp/${app_name}_assets.zip.sha256"
+            rm -rf "$TMP_DIR"
+
+            refresh_desktop_menus
+            echo "Success! ${app_name} v${version} has been installed."
+            if ! check_fuse_support; then
+                echo "Warning: FUSE was not detected on this system. AppImages require FUSE to launch."
+                echo "Install it via your package manager, e.g.: sudo apt install libfuse2t64 (or libfuse2 on older distros)"
+            fi
+        else
+            echo "Error: Failed to download assets from GitHub."
+            return 1
+        fi
+    fi
+}
+
+# Delete a given application
+# Usage: delete_app <app_name>
+delete_app() {
+    local app_name="$1"
+
+    local confirm=false
+    if command -v zenity &> /dev/null; then
+        zenity --question --title="Confirm Deletion" --text="Are you sure you want to completely remove ${app_name} from your system?" --width=350
+        if [ $? -eq 0 ]; then
+            confirm=true
+        fi
+    else
+        read -p "Are you sure you want to completely remove ${app_name}? (y/N): " CONFIRM
+        if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
+            confirm=true
+        fi
+    fi
+
+    if [ "$confirm" = true ]; then
+        echo "--> Removing ${app_name} system files..."
+        rm -f "$HOME/Applications/${app_name}-x86_64.AppImage"
+        rm -f "$HOME/.local/share/applications/${app_name}.desktop"
+        rm -f "$HOME/.local/share/icons/hicolor/256x256/apps/${app_name}.png"
+        rm -f "$HOME/Desktop/${app_name}.desktop"
+
+        echo "--> Refreshing system application menus..."
+        refresh_desktop_menus
+
+        if command -v zenity &> /dev/null; then
+            zenity --info --title="Deleted" --text="${app_name} has been completely removed." --width=350
+        else
+            echo "${app_name} has been completely removed."
+        fi
+    else
+        echo "Deletion cancelled."
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Main Script – Action Picker
+# ---------------------------------------------------------------------------
+
 # Graphical Action Picker
 if command -v zenity &> /dev/null; then
-    ACTION=$(zenity --list --radiolist --title="Archivist Setup v${VERSION}" \
+    ACTION=$(zenity --list --radiolist --title="Archivist Setup" \
         --column="" --column="Action" --column="Description" \
-        TRUE "Install" "Download and install Archivist v${VERSION} to your system" \
-        FALSE "Delete" "Remove Archivist and its shortcut completely" \
+        TRUE "Install Archivist" "Download and install Archivist v${VERSION}" \
+        FALSE "Install Archivist-Matrix" "Download and install Archivist-Matrix v${VERSION}" \
+        FALSE "Delete Archivist" "Remove Archivist and its shortcuts" \
+        FALSE "Delete Archivist-Matrix" "Remove Archivist-Matrix and its shortcuts" \
         FALSE "Abort" "Exit setup" \
-        --width=450 --height=250)
+        --width=500 --height=300)
 else
     echo "=========================================="
-    echo "         ARCHIVIST SETUP v${VERSION}       "
+    echo "         ARCHIVIST SETUP                  "
     echo "=========================================="
     echo "1) Install Archivist"
-    echo "2) Delete / Uninstall Archivist"
-    echo "3) Abort"
-    read -p "Choose an option (1-3): " CHOICE
+    echo "2) Install Archivist-Matrix"
+    echo "3) Delete Archivist"
+    echo "4) Delete Archivist-Matrix"
+    echo "5) Abort"
+    read -p "Choose an option (1-5): " CHOICE
     case "$CHOICE" in
-        1) ACTION="Install" ;;
-        2) ACTION="Delete" ;;
+        1) ACTION="Install Archivist" ;;
+        2) ACTION="Install Archivist-Matrix" ;;
+        3) ACTION="Delete Archivist" ;;
+        4) ACTION="Delete Archivist-Matrix" ;;
         *) ACTION="Abort" ;;
     esac
 fi
@@ -125,158 +314,19 @@ echo "      \`---_____---\`     "
 echo -e "\e[0m"
 echo "--- Running Archivist Installer v${VERSION} ---"
 
-# Pre-flight check for extraction utilities
-if [ "$ACTION" = "Install" ] && ! command -v unzip &> /dev/null; then
-    if command -v zenity &> /dev/null; then
-        zenity --error --title="Missing Dependency" --text="Required tool 'unzip' is not installed. Please install it via your package manager." --width=350
-    else
-        echo "Error: 'unzip' is required but not installed. Please install it and try again."
-    fi
-    exit 1
-fi
-
 case "$ACTION" in
-    "Install")
-        echo "--> Creating clean workspace..."
-        TMP_DIR="/tmp/archivist_extract"
-        rm -rf "$TMP_DIR"
-        mkdir -p "$TMP_DIR"
-
-        # Ensure the downloaded zip, checksum file, error-reason file, and
-        # extraction workspace are cleaned up even if the script is interrupted
-        trap 'rm -f /tmp/Archivist_assets.zip /tmp/Archivist_assets.zip.sha256 /tmp/Archivist_install_error; rm -rf "$TMP_DIR"' EXIT
-
-        if command -v zenity &> /dev/null; then
-            rm -f /tmp/Archivist_install_error
-            (
-                echo "10" ; echo "# Connecting to GitHub Servers for v${VERSION}..."
-                if ! curl -f -L "$GITHUB_URL" -o /tmp/Archivist_assets.zip; then
-                    echo "100" ; echo "# Error downloading assets from GitHub."
-                    echo "Could not download Archivist_assets.zip from GitHub. Check your internet connection and try again." > /tmp/Archivist_install_error
-                    exit 1
-                fi
-
-                echo "25" ; echo "# Fetching checksum for verification..."
-                if ! curl -f -sL "$SHA_URL" -o /tmp/Archivist_assets.zip.sha256; then
-                    echo "100" ; echo "# Error downloading checksum file."
-                    echo "Could not download the checksum file (Archivist_assets.zip.sha256) from GitHub. Check your internet connection and try again." > /tmp/Archivist_install_error
-                    exit 1
-                fi
-
-                echo "35" ; echo "# Verifying download integrity..."
-                EXPECTED_HASH=$(awk '{print $1}' /tmp/Archivist_assets.zip.sha256)
-                ACTUAL_HASH=$(sha256sum /tmp/Archivist_assets.zip | awk '{print $1}')
-                if [ "$EXPECTED_HASH" != "$ACTUAL_HASH" ]; then
-                    echo "100" ; echo "# Checksum mismatch -- download may be corrupted or tampered with."
-                    echo "Checksum verification failed: the downloaded file does not match the expected hash.\n\nExpected: $EXPECTED_HASH\nActual:   $ACTUAL_HASH\n\nThe download may be corrupted or tampered with. Please try running the installer again." > /tmp/Archivist_install_error
-                    exit 1
-                fi
-
-                echo "50" ; echo "# Extracting file structure safely..."
-                if ! unzip -o /tmp/Archivist_assets.zip -d "$TMP_DIR" > /dev/null; then
-                    echo "100" ; echo "# Error extracting archive."
-                    echo "Failed to extract Archivist_assets.zip. The archive may be corrupted." > /tmp/Archivist_install_error
-                    exit 1
-                fi
-
-                echo "75" ; echo "# Merging folders into system root..."
-                deploy_assets "$TMP_DIR"
-
-                echo "90" ; echo "# Finalizing configurations..."
-                rm -f /tmp/Archivist_assets.zip /tmp/Archivist_assets.zip.sha256
-                rm -rf "$TMP_DIR"
-
-                echo "100" ; echo "# Installation Complete!"
-            ) | zenity --progress --title="Archivist Installer v${VERSION}" --text="Preparing installation..." --percentage=0 --auto-close --width=400
-
-            INSTALL_STATUS=${PIPESTATUS[0]}
-            refresh_desktop_menus
-
-            if [ "$INSTALL_STATUS" -eq 0 ]; then
-                if check_fuse_support; then
-                    zenity --info --title="Success" --text="Archivist v${VERSION} has been successfully installed!" --width=350
-                else
-                    zenity --warning --title="Installed -- Missing Dependency" --text="Archivist v${VERSION} was installed, but FUSE was not detected on this system. AppImages require FUSE to launch.\n\nInstall it via your package manager, e.g.:\nsudo apt install libfuse2t64\n(or libfuse2 on older distros)" --width=400
-                fi
-            else
-                if [ -f /tmp/Archivist_install_error ]; then
-                    ERROR_DETAIL=$(cat /tmp/Archivist_install_error)
-                else
-                    ERROR_DETAIL="Archivist installation did not complete successfully."
-                fi
-                zenity --error --title="Installation Failed" --text="$ERROR_DETAIL" --width=400
-                rm -f /tmp/Archivist_install_error
-            fi
-        else
-            echo "Downloading assets from GitHub..."
-            if curl -f -L "$GITHUB_URL" -o /tmp/Archivist_assets.zip; then
-                echo "Fetching checksum for verification..."
-                if ! curl -f -sL "$SHA_URL" -o /tmp/Archivist_assets.zip.sha256; then
-                    echo "Error: Failed to download checksum file from GitHub."
-                    exit 1
-                fi
-
-                echo "Verifying download integrity..."
-                EXPECTED_HASH=$(awk '{print $1}' /tmp/Archivist_assets.zip.sha256)
-                ACTUAL_HASH=$(sha256sum /tmp/Archivist_assets.zip | awk '{print $1}')
-                if [ "$EXPECTED_HASH" != "$ACTUAL_HASH" ]; then
-                    echo "Error: Checksum mismatch -- download may be corrupted or tampered with."
-                    exit 1
-                fi
-
-                echo "Extracting safely..."
-                unzip -o /tmp/Archivist_assets.zip -d "$TMP_DIR" > /dev/null
-                echo "Merging files to \$HOME..."
-                deploy_assets "$TMP_DIR"
-
-                rm -f /tmp/Archivist_assets.zip /tmp/Archivist_assets.zip.sha256
-                rm -rf "$TMP_DIR"
-
-                refresh_desktop_menus
-                echo "Success! Archivist v${VERSION} has been installed."
-                if ! check_fuse_support; then
-                    echo "Warning: FUSE was not detected on this system. AppImages require FUSE to launch."
-                    echo "Install it via your package manager, e.g.: sudo apt install libfuse2t64 (or libfuse2 on older distros)"
-                fi
-            else
-                echo "Error: Failed to download assets from GitHub."
-                exit 1
-            fi
-        fi
+    "Install Archivist")
+        install_app "Archivist" "$VERSION" "$ARCHIVIST_URL" "$ARCHIVIST_SHA_URL"
         ;;
-
-    "Delete")
-        RUN_DELETE="false"
-        if command -v zenity &> /dev/null; then
-            zenity --question --title="Confirm Deletion" --text="Are you sure you want to completely remove Archivist from your system?" --width=350
-            if [ $? -eq 0 ]; then
-                RUN_DELETE="true"
-            fi
-        else
-            read -p "Are you sure you want to completely remove Archivist? (y/N): " CONFIRM
-            if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
-                RUN_DELETE="true"
-            fi
-        fi
-
-        if [ "$RUN_DELETE" = "true" ]; then
-            echo "--> Removing system files..."
-            rm -f "$HOME/Applications/Archivist-x86_64.AppImage"
-            rm -f "$HOME/.local/share/applications/Archivist.desktop"
-            rm -f "$HOME/.local/share/icons/hicolor/256x256/apps/archivist.png"
-            rm -f "$HOME/Desktop/Archivist.desktop"
-
-            echo "--> Refreshing system application menus..."
-            refresh_desktop_menus
-
-            if command -v zenity &> /dev/null; then
-                zenity --info --title="Deleted" --text="Archivist has been completely removed." --width=350
-            else
-                echo "Archivist has been completely removed."
-            fi
-        fi
+    "Install Archivist-Matrix")
+        install_app "Archivist-Matrix" "$VERSION" "$MATRIX_URL" "$MATRIX_SHA_URL"
         ;;
-
+    "Delete Archivist")
+        delete_app "Archivist"
+        ;;
+    "Delete Archivist-Matrix")
+        delete_app "Archivist-Matrix"
+        ;;
     *)
         echo "Exiting setup."
         exit 0
