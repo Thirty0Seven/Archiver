@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Configuration Variables
-VERSION="1.0.0"
+VERSION="1.2.0"
 GITHUB_URL="https://github.com/Thirty0Seven/Archivist/releases/download/v${VERSION}/Archivist_assets.zip"
 SHA_URL="https://github.com/Thirty0Seven/Archivist/releases/download/v${VERSION}/Archivist_assets.zip.sha256"
 
