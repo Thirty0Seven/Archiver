@@ -1,6 +1,7 @@
 # Archivist
 
-**Version:** v1.2.0 &nbsp;|&nbsp; **Platform:** Linux &nbsp;|&nbsp; **License:** MIT
+**Version:** v1.2.0 &nbsp;|&nbsp; **Platform:** Linux &nbsp;|&nbsp; **License:** MIT &nbsp;|&nbsp; **Maintained by:** [37](https://github.com/Thirty0Seven)
+
 
 A simple tool that packages directories into self-extracting shell scripts. That's all there really is to it.
 
